@@ -11,6 +11,16 @@ Substack-style subscriptions, but the payment rail is USDC.e on Kite. Merchants 
 | `packages/api`    | Hono server: plans, subs, payments  | **In-memory**    | Ships v0.1; restart wipes state |
 | `packages/web`    | Vite playground: merchant + subscriber dashboards | Talks to API     | Ships v0.1              |
 
+## Live deployment
+
+- Web app: <https://kitesubs.vercel.app>
+- Host: Vercel (`kitesubs`)
+- Deployed package: `packages/web`
+- Build: `pnpm build`
+- Output: `dist`
+
+The hosted web app is live. Subscription actions still need a deployed API and `VITE_API_BASE` configured to that API URL; otherwise the app uses the local development default (`http://localhost:3030`).
+
 ## v0.1 honest scope
 
 - **In-memory store.** The backend keeps plans, subscriptions, and payment records in a `Map`. Restart wipes everything. To go to production: swap the store for Drizzle + Postgres (Supabase is easiest). The store interface is one file, so this is a contained refactor.
