@@ -1,0 +1,11 @@
+{
+  "name": "kitesubs",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Recurring USDC.e subscriptions on Kite",
+  "scripts": {
+    "dev:api": "pnpm --filter @kitesubs/api dev",
+    "dev:web": "pnpm --filter @kitesubs/web dev",
+    "build:web": "pnpm --filter @kitesubs/web build"
+  }
+}
