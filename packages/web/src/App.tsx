@@ -17,7 +17,8 @@ import { SubscriberDashboard } from "./components/subscriber-dashboard";
 import { MerchantDashboard } from "./components/merchant-dashboard";
 
 const NETWORK_STORAGE_KEY = "kitesubs:network";
-const WALLETCONNECT_PROJECT_ID = "00000000000000000000000000000000";
+const WALLETCONNECT_PROJECT_ID =
+  import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "YOUR_PROJECT_ID";
 
 const wagmiConfig = getDefaultConfig({
   appName: "KiteSubs",
