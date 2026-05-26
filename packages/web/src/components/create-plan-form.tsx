@@ -107,9 +107,9 @@ export function CreatePlanForm({ network, onCreated }: Props) {
   return (
     <div className="w-full max-w-xl mx-auto">
       <div className="bg-kite-muted/70 border border-kite-border rounded-xl px-4 py-3 mb-6 text-xs text-kite-fg/75 leading-relaxed">
-        <strong className="font-semibold text-kite-fg">v0.1 uses an in-memory store.</strong>{" "}
-        Plans live for as long as the API process runs. For production, swap to Postgres — the
-        store interface is one file.
+        <strong className="font-semibold text-kite-fg">v0.1 uses a lightweight demo store.</strong>{" "}
+        If no API endpoint is configured, plan links are encoded locally so the live preview still
+        works. For production, swap to the API package with Postgres.
       </div>
 
       <form
