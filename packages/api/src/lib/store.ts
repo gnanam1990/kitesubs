@@ -1,7 +1,12 @@
-// In-memory store. v0.2 swap: replace each function with a Drizzle/Postgres equivalent.
-// Schema mirrors the Postgres tables we'll create later (plans, subscriptions, payments).
-
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
 
 export type SubscriptionStatus = "active" | "cancelled" | "overdue";
 export type PaymentStatus = "pending" | "confirmed" | "failed";
@@ -47,8 +52,57 @@ const subscriptions = new Map<string, Subscription>();
 const payments = new Map<string, Payment>();
 const paymentTxHashes = new Set<string>();
 
+interface StoreSnapshot {
+  plans: Plan[];
+  subscriptions: Subscription[];
+  payments: Payment[];
+}
+
+const STORE_FILE = resolve(process.env.KITESUBS_STORE_FILE ?? ".data/kitesubs-store.json");
+
+function readSnapshot(): StoreSnapshot {
+  if (!existsSync(STORE_FILE)) return { plans: [], subscriptions: [], payments: [] };
+
+  const parsed = JSON.parse(readFileSync(STORE_FILE, "utf8")) as Partial<StoreSnapshot>;
+  return {
+    plans: Array.isArray(parsed.plans) ? parsed.plans : [],
+    subscriptions: Array.isArray(parsed.subscriptions) ? parsed.subscriptions : [],
+    payments: Array.isArray(parsed.payments) ? parsed.payments : [],
+  };
+}
+
+function persistStore() {
+  mkdirSync(dirname(STORE_FILE), { recursive: true });
+  const snapshot: StoreSnapshot = {
+    plans: Array.from(plans.values()),
+    subscriptions: Array.from(subscriptions.values()),
+    payments: Array.from(payments.values()),
+  };
+  const tmpFile = `${STORE_FILE}.${process.pid}.tmp`;
+  writeFileSync(tmpFile, JSON.stringify(snapshot, null, 2));
+  renameSync(tmpFile, STORE_FILE);
+}
+
 function normalizeTxHash(txHash: string): string {
   return txHash.toLowerCase();
+}
+
+function loadStore() {
+  try {
+    const snapshot = readSnapshot();
+    for (const plan of snapshot.plans) plans.set(plan.id, plan);
+    for (const subscription of snapshot.subscriptions) subscriptions.set(subscription.id, subscription);
+    for (const payment of snapshot.payments) {
+      payments.set(payment.id, payment);
+      if (payment.tx_hash) paymentTxHashes.add(normalizeTxHash(payment.tx_hash));
+    }
+  } catch (err) {
+    throw new Error(
+      `Could not load KITESUBS_STORE_FILE ${STORE_FILE}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
 }
 
 export function isPaymentTxUsed(txHash: string): boolean {
@@ -65,6 +119,7 @@ export function createPlan(input: Omit<Plan, "id" | "created_at" | "active">): P
     created_at: Date.now(),
   };
   plans.set(plan.id, plan);
+  persistStore();
   return plan;
 }
 
@@ -83,6 +138,7 @@ export function setPlanActive(id: string, active: boolean): Plan | null {
   const p = plans.get(id);
   if (!p) return null;
   p.active = active;
+  persistStore();
   return p;
 }
 
@@ -121,6 +177,7 @@ export function createSubscription(input: {
   };
   payments.set(pmt.id, pmt);
   paymentTxHashes.add(normalizedTxHash);
+  persistStore();
   return { subscription: sub, payment: pmt };
 }
 
@@ -146,6 +203,7 @@ export function cancelSubscription(id: string): Subscription | null {
   if (!s) return null;
   s.status = "cancelled";
   s.cancelled_at = Date.now();
+  persistStore();
   return s;
 }
 
@@ -174,6 +232,7 @@ export function recordRenewal(input: {
   paymentTxHashes.add(normalizedTxHash);
   sub.next_renewal = now + plan.period_days * 24 * 60 * 60 * 1000;
   sub.status = "active";
+  persistStore();
   return { subscription: sub, payment: pmt };
 }
 
@@ -220,3 +279,5 @@ export function seedIfEmpty() {
     network: "mainnet",
   });
 }
+
+loadStore();

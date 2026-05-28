@@ -8,7 +8,7 @@ Substack-style subscriptions, but the payment rail is USDC.e on Kite. Merchants 
 
 | Package           | What it is                          | Storage          | Status                  |
 | ----------------- | ----------------------------------- | ---------------- | ----------------------- |
-| `packages/api`    | Hono server: plans, subs, payments  | **In-memory**    | Ships v0.1; restart wipes state |
+| `packages/api`    | Hono server: plans, subs, payments  | JSON file via `KITESUBS_STORE_FILE` | Ships v0.1              |
 | `packages/web`    | Vite playground: merchant + subscriber dashboards | Talks to API     | Ships v0.1              |
 
 ## Live deployment
@@ -23,7 +23,7 @@ The hosted web app is live. Subscription actions still need a deployed API and `
 
 ## v0.1 honest scope
 
-- **In-memory store.** The backend keeps plans, subscriptions, payment records, and the tx replay index in `Map`/`Set` state. Restart wipes everything. To go to production: swap the store for Drizzle + Postgres (Supabase is easiest). The store interface is one file, so this is a contained refactor.
+- **Persistent API store.** The backend persists plans, subscriptions, payment records, and the tx replay index to `KITESUBS_STORE_FILE` or `.data/kitesubs-store.json` by default. Use a durable mounted volume for production API hosting.
 - **Wallet-only payments.** Subscribers click "Renew now" each period and sign the tx. Agent auto-renew via kpass session lands in v0.2.
 - **On-chain tx verification.** When a renewal claim comes in, the API decodes the receipt and confirms the ERC-20 `Transfer` event matches the subscriber, plan recipient, and amount. Trust nothing from the client.
 - **Replay protection.** A tx hash can be used once. The API and browser-local demo store both reject reused first-payment or renewal hashes.
@@ -55,7 +55,7 @@ The web app talks to the API via `VITE_API_BASE` (defaults to `http://localhost:
 
 ## Production path (v0.2)
 
-1. Replace `packages/api/src/lib/store.ts` (in-memory) with Drizzle + Postgres. Schema is documented inline.
+1. Replace the JSON-file store with Drizzle + Postgres when you need multi-instance writes, backups, and queryable analytics.
 2. Add a renewal worker (node-cron or Supabase scheduled function) that marks `next_renewal < now` subscriptions as `overdue`.
 3. Add kpass session integration so an agent can renew without human approval (within an allowance cap).
 4. Deploy: API → Railway/Hetzner; Web → Vercel.

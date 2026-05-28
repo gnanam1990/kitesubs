@@ -10,7 +10,7 @@ const app = new Hono();
 app.use("/*", cors({ origin: "*", allowHeaders: ["Content-Type", "Authorization"] }));
 
 app.get("/health", (c) =>
-  c.json({ ok: true, service: "kitesubs-api", store: "in-memory" })
+  c.json({ ok: true, service: "kitesubs-api", store: "json-file" })
 );
 
 app.route("/plans", plansRouter);
