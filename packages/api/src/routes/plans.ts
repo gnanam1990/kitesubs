@@ -7,10 +7,13 @@ import {
   listPaymentsByPlan,
   setPlanActive,
 } from "../lib/store.ts";
+import { requireWriteAuth } from "../lib/auth.ts";
 
 export const plansRouter = new Hono();
 
-plansRouter.post("/", async (c) => {
+const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+
+plansRouter.post("/", requireWriteAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body || typeof body !== "object") return c.json({ error: "invalid json" }, 400);
 
@@ -31,16 +34,22 @@ plansRouter.post("/", async (c) => {
   if (body.network !== "mainnet" && body.network !== "testnet") {
     return c.json({ error: "network must be mainnet or testnet" }, 400);
   }
+  if (!ADDRESS_RE.test(body.merchant_address)) {
+    return c.json({ error: "invalid merchant_address" }, 400);
+  }
+  if (!ADDRESS_RE.test(body.token_address)) {
+    return c.json({ error: "invalid token_address" }, 400);
+  }
   if (typeof body.period_days !== "number" || body.period_days < 1) {
     return c.json({ error: "period_days must be a positive integer" }, 400);
   }
 
   const plan = createPlan({
-    merchant_address: body.merchant_address,
+    merchant_address: body.merchant_address.toLowerCase(),
     title: body.title,
     description: body.description ?? null,
     amount_raw: body.amount_raw,
-    token_address: body.token_address,
+    token_address: body.token_address.toLowerCase(),
     token_decimals: body.token_decimals,
     token_symbol: body.token_symbol,
     period_days: body.period_days,
@@ -71,10 +80,10 @@ plansRouter.get("/:id/payments", (c) => {
   return c.json({ payments: listPaymentsByPlan(c.req.param("id")) });
 });
 
-plansRouter.post("/:id/active", async (c) => {
+plansRouter.post("/:id/active", requireWriteAuth, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const active = body?.active !== false;
-  const plan = setPlanActive(c.req.param("id"), active);
+  const plan = setPlanActive(c.req.param("id") ?? "", active);
   if (!plan) return c.json({ error: "plan not found" }, 404);
   return c.json({ plan });
 });

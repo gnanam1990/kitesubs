@@ -13,6 +13,7 @@ const NATIVE = (token: string) =>
 export interface VerifyArgs {
   tx_hash: `0x${string}`;
   expected_to: string;
+  expected_from: string;
   expected_amount: bigint;
   token: string;
   network: KiteNetwork;
@@ -29,6 +30,9 @@ export async function verifyPayment(args: VerifyArgs): Promise<
 
     if (NATIVE(args.token)) {
       const tx = await client.getTransaction({ hash: args.tx_hash });
+      if (tx.from.toLowerCase() !== args.expected_from.toLowerCase()) {
+        return { valid: false, reason: "tx sender does not match subscriber" };
+      }
       if (tx.to?.toLowerCase() !== args.expected_to.toLowerCase()) {
         return { valid: false, reason: "tx recipient does not match plan" };
       }
@@ -47,8 +51,9 @@ export async function verifyPayment(args: VerifyArgs): Promise<
           topics: log.topics,
         });
         if (decoded.eventName !== "Transfer") continue;
-        const { to, value } = decoded.args as { to: string; value: bigint };
+        const { from, to, value } = decoded.args as { from: string; to: string; value: bigint };
         if (
+          from.toLowerCase() === args.expected_from.toLowerCase() &&
           to.toLowerCase() === args.expected_to.toLowerCase() &&
           value >= args.expected_amount
         ) {

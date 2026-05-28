@@ -122,6 +122,15 @@ function findPlan(store: LocalStore, id: string): Plan | null {
   return store.plans.find((plan) => plan.id === id) ?? decodePlanId(id);
 }
 
+function normalizeTxHash(txHash: unknown): string {
+  return String(txHash).toLowerCase();
+}
+
+function isPaymentTxUsed(store: LocalStore, txHash: unknown): boolean {
+  const normalized = normalizeTxHash(txHash);
+  return store.payments.some((payment) => payment.tx_hash?.toLowerCase() === normalized);
+}
+
 async function parseBody(init?: RequestInit): Promise<Record<string, unknown>> {
   if (!init?.body || typeof init.body !== "string") return {};
   return JSON.parse(init.body) as Record<string, unknown>;
@@ -193,6 +202,7 @@ async function localRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await parseBody(init);
     const plan = findPlan(store, String(body.plan_id));
     if (!plan) throw new Error("plan not found");
+    if (isPaymentTxUsed(store, body.first_tx_hash)) throw new Error("payment tx already used");
     const now = Date.now();
     const subscription: Subscription = {
       id: randomId("sub"),
@@ -206,7 +216,7 @@ async function localRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const payment: Payment = {
       id: randomId("pay"),
       subscription_id: subscription.id,
-      tx_hash: String(body.first_tx_hash),
+      tx_hash: normalizeTxHash(body.first_tx_hash),
       amount_raw: plan.amount_raw,
       status: "confirmed",
       paid_at: now,
@@ -255,11 +265,12 @@ async function localRequest<T>(path: string, init?: RequestInit): Promise<T> {
     if (!subscription) throw new Error("subscription not found");
     const plan = findPlan(store, subscription.plan_id);
     if (!plan) throw new Error("plan not found");
+    if (isPaymentTxUsed(store, body.tx_hash)) throw new Error("payment tx already used");
     const now = Date.now();
     const payment: Payment = {
       id: randomId("pay"),
       subscription_id: subscription.id,
-      tx_hash: String(body.tx_hash),
+      tx_hash: normalizeTxHash(body.tx_hash),
       amount_raw: plan.amount_raw,
       status: "confirmed",
       paid_at: now,

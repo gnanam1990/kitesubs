@@ -23,9 +23,11 @@ The hosted web app is live. Subscription actions still need a deployed API and `
 
 ## v0.1 honest scope
 
-- **In-memory store.** The backend keeps plans, subscriptions, and payment records in a `Map`. Restart wipes everything. To go to production: swap the store for Drizzle + Postgres (Supabase is easiest). The store interface is one file, so this is a contained refactor.
+- **In-memory store.** The backend keeps plans, subscriptions, payment records, and the tx replay index in `Map`/`Set` state. Restart wipes everything. To go to production: swap the store for Drizzle + Postgres (Supabase is easiest). The store interface is one file, so this is a contained refactor.
 - **Wallet-only payments.** Subscribers click "Renew now" each period and sign the tx. Agent auto-renew via kpass session lands in v0.2.
-- **On-chain tx verification.** When a renewal claim comes in, the API decodes the receipt and confirms the ERC-20 `Transfer` event matches the plan's amount + recipient. Trust nothing from the client.
+- **On-chain tx verification.** When a renewal claim comes in, the API decodes the receipt and confirms the ERC-20 `Transfer` event matches the subscriber, plan recipient, and amount. Trust nothing from the client.
+- **Replay protection.** A tx hash can be used once. The API and browser-local demo store both reject reused first-payment or renewal hashes.
+- **Write auth.** API mutations require `Authorization: Bearer $KITESUBS_WRITE_API_KEY`; if the key is not configured, write routes fail closed.
 - **No email/webhook notifications.** v0.2.
 - **No fee.** Free.
 

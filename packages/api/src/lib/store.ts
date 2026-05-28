@@ -45,6 +45,15 @@ export interface Payment {
 const plans = new Map<string, Plan>();
 const subscriptions = new Map<string, Subscription>();
 const payments = new Map<string, Payment>();
+const paymentTxHashes = new Set<string>();
+
+function normalizeTxHash(txHash: string): string {
+  return txHash.toLowerCase();
+}
+
+export function isPaymentTxUsed(txHash: string): boolean {
+  return paymentTxHashes.has(normalizeTxHash(txHash));
+}
 
 // === plans ===
 
@@ -87,6 +96,8 @@ export function createSubscription(input: {
 }): { subscription: Subscription; payment: Payment } | null {
   const plan = plans.get(input.plan_id);
   if (!plan) return null;
+  const normalizedTxHash = normalizeTxHash(input.first_payment_tx);
+  if (isPaymentTxUsed(normalizedTxHash)) return null;
   const now = Date.now();
   const next_renewal = now + plan.period_days * 24 * 60 * 60 * 1000;
   const sub: Subscription = {
@@ -102,13 +113,14 @@ export function createSubscription(input: {
   const pmt: Payment = {
     id: randomUUID(),
     subscription_id: sub.id,
-    tx_hash: input.first_payment_tx,
+    tx_hash: normalizedTxHash,
     amount_raw: input.amount_raw,
     status: "confirmed",
     paid_at: now,
     due_at: now,
   };
   payments.set(pmt.id, pmt);
+  paymentTxHashes.add(normalizedTxHash);
   return { subscription: sub, payment: pmt };
 }
 
@@ -144,19 +156,22 @@ export function recordRenewal(input: {
 }): { subscription: Subscription; payment: Payment } | null {
   const sub = subscriptions.get(input.subscription_id);
   if (!sub) return null;
+  const normalizedTxHash = normalizeTxHash(input.tx_hash);
+  if (isPaymentTxUsed(normalizedTxHash)) return null;
   const plan = plans.get(sub.plan_id);
   if (!plan) return null;
   const now = Date.now();
   const pmt: Payment = {
     id: randomUUID(),
     subscription_id: sub.id,
-    tx_hash: input.tx_hash,
+    tx_hash: normalizedTxHash,
     amount_raw: input.amount_raw,
     status: "confirmed",
     paid_at: now,
     due_at: sub.next_renewal,
   };
   payments.set(pmt.id, pmt);
+  paymentTxHashes.add(normalizedTxHash);
   sub.next_renewal = now + plan.period_days * 24 * 60 * 60 * 1000;
   sub.status = "active";
   return { subscription: sub, payment: pmt };

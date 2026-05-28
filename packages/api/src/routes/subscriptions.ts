@@ -4,15 +4,20 @@ import {
   getPlan,
   getSubscription,
   cancelSubscription,
+  isPaymentTxUsed,
   listSubscriptionsBySubscriber,
   listPaymentsBySubscription,
   recordRenewal,
 } from "../lib/store.ts";
 import { verifyPayment } from "../lib/verify-tx.ts";
+import { requireWriteAuth } from "../lib/auth.ts";
 
 export const subscriptionsRouter = new Hono();
 
-subscriptionsRouter.post("/", async (c) => {
+const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const TX_RE = /^0x[a-fA-F0-9]{64}$/;
+
+subscriptionsRouter.post("/", requireWriteAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body) return c.json({ error: "invalid json" }, 400);
 
@@ -20,14 +25,21 @@ subscriptionsRouter.post("/", async (c) => {
   if (!plan_id || !subscriber_address || !first_tx_hash) {
     return c.json({ error: "plan_id, subscriber_address, first_tx_hash all required" }, 400);
   }
+  if (!ADDRESS_RE.test(subscriber_address)) return c.json({ error: "invalid subscriber_address" }, 400);
+  if (!TX_RE.test(first_tx_hash)) return c.json({ error: "invalid first_tx_hash" }, 400);
+  const normalizedTxHash = first_tx_hash.toLowerCase();
+  if (isPaymentTxUsed(normalizedTxHash)) {
+    return c.json({ error: "payment_tx_already_used" }, 409);
+  }
 
   const plan = getPlan(plan_id);
   if (!plan) return c.json({ error: "plan not found" }, 404);
   if (!plan.active) return c.json({ error: "plan is not active" }, 400);
 
   const verification = await verifyPayment({
-    tx_hash: first_tx_hash,
+    tx_hash: normalizedTxHash as `0x${string}`,
     expected_to: plan.merchant_address,
+    expected_from: subscriber_address,
     expected_amount: BigInt(plan.amount_raw),
     token: plan.token_address,
     network: plan.network,
@@ -38,11 +50,11 @@ subscriptionsRouter.post("/", async (c) => {
 
   const result = createSubscription({
     plan_id,
-    subscriber_address,
-    first_payment_tx: first_tx_hash,
+    subscriber_address: subscriber_address.toLowerCase(),
+    first_payment_tx: normalizedTxHash,
     amount_raw: plan.amount_raw,
   });
-  if (!result) return c.json({ error: "could not create subscription" }, 500);
+  if (!result) return c.json({ error: "payment_tx_already_used" }, 409);
   return c.json(result);
 });
 
@@ -64,17 +76,22 @@ subscriptionsRouter.get("/:id/payments", (c) => {
   return c.json({ payments: listPaymentsBySubscription(c.req.param("id")) });
 });
 
-subscriptionsRouter.post("/:id/cancel", (c) => {
-  const sub = cancelSubscription(c.req.param("id"));
+subscriptionsRouter.post("/:id/cancel", requireWriteAuth, (c) => {
+  const sub = cancelSubscription(c.req.param("id") ?? "");
   if (!sub) return c.json({ error: "subscription not found" }, 404);
   return c.json({ subscription: sub });
 });
 
-subscriptionsRouter.post("/:id/renew", async (c) => {
+subscriptionsRouter.post("/:id/renew", requireWriteAuth, async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body?.tx_hash) return c.json({ error: "tx_hash required" }, 400);
+  if (!TX_RE.test(body.tx_hash)) return c.json({ error: "invalid tx_hash" }, 400);
+  const normalizedTxHash = body.tx_hash.toLowerCase();
+  if (isPaymentTxUsed(normalizedTxHash)) {
+    return c.json({ error: "payment_tx_already_used" }, 409);
+  }
 
-  const sub = getSubscription(c.req.param("id"));
+  const sub = getSubscription(c.req.param("id") ?? "");
   if (!sub) return c.json({ error: "subscription not found" }, 404);
   if (sub.status === "cancelled") return c.json({ error: "subscription is cancelled" }, 400);
 
@@ -82,8 +99,9 @@ subscriptionsRouter.post("/:id/renew", async (c) => {
   if (!plan) return c.json({ error: "plan disappeared" }, 500);
 
   const verification = await verifyPayment({
-    tx_hash: body.tx_hash,
+    tx_hash: normalizedTxHash as `0x${string}`,
     expected_to: plan.merchant_address,
+    expected_from: sub.subscriber_address,
     expected_amount: BigInt(plan.amount_raw),
     token: plan.token_address,
     network: plan.network,
@@ -94,9 +112,9 @@ subscriptionsRouter.post("/:id/renew", async (c) => {
 
   const result = recordRenewal({
     subscription_id: sub.id,
-    tx_hash: body.tx_hash,
+    tx_hash: normalizedTxHash,
     amount_raw: plan.amount_raw,
   });
-  if (!result) return c.json({ error: "could not record renewal" }, 500);
+  if (!result) return c.json({ error: "payment_tx_already_used" }, 409);
   return c.json(result);
 });
